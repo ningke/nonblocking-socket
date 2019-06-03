@@ -131,6 +131,11 @@ public:
         return id;
     }
 
+    /* Get stats */
+    SockStat getStats() const {
+        return stat;
+    }
+
     /* Set the OnRecv callback */
     void setRecvFn(NSockOnRecvFunc recvFn) {
         onRecv = recvFn;

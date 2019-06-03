@@ -20,7 +20,7 @@ public:
 
     int addFd(int fd, uint32_t events, PollFunc callback);
     int removeFd(int fd);
-    int wait(int timeoutMs=-1);
+    int waitForEvents(int timeoutMs=-1);
 
     int epollfd = -1;
     map<int, PollFunc> fdMap;
@@ -47,7 +47,7 @@ void npollLoop(bool &exitLoop) {
     const int timerResMs = 1000;
 
     while (!exitLoop) {
-        sNPollObj.wait(timerResMs);
+        sNPollObj.waitForEvents(timerResMs);
     }
 
     log("%s: exiting...\n", __FUNCTION__);
@@ -82,7 +82,7 @@ NPollStruct::~NPollStruct() {
 }
 
 
-int NPollStruct::wait(int timeoutMs) {
+int NPollStruct::waitForEvents(int timeoutMs) {
     int eventsNr = fdMap.size();
 
     if (eventsNr == 0) {
