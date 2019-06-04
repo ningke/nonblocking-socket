@@ -1,10 +1,18 @@
 #include <string>
+#include <sstream>
+#include <chrono>
+
+#include <unistd.h>
+#include <sys/types.h>
+#include <time.h>
 
 #include "assert.h"
 #include "util.h"
 #include "stdio.h"
 #include "stdarg.h"
 
+
+using namespace std;
 
 namespace nsock {
 
@@ -37,13 +45,20 @@ int setnonblocking(int fd) {
 }
 
 
-static const char *sLogFilePath = "/tmp/nsock.log";
+static string sLogFilePath = "/tmp/nsock/nsock";
 static FILE *sLogSink = nullptr;
 
 
+void logSetPath(const string &logFilePath) {
+    stringstream ss;
+    ss << logFilePath << "-" << getpid() << ".log";
+
+    sLogFilePath = ss.str();
+}
+
 void log(const char *fmt, ...) {
     if (!sLogSink) {
-        sLogSink = fopen(sLogFilePath, "w");
+        sLogSink = fopen(sLogFilePath.c_str(), "w");
         assert(sLogSink);
     }
 

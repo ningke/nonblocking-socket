@@ -4,9 +4,9 @@ CFLAGS = -I$(INCLUDE_DIR) -fsanitize=address -Wall -g -std=c++17
 
 LIBS=
 
-DEPS = nsock.h npoll.h echoServer.h util.h
+DEPS = nsock.h npoll.h echoServer.h util.h commandServer.h
 
-OBJ = nsock.o npoll.o util.o
+OBJ = nsock.o npoll.o util.o commandServer.o
 
 %.o: %.cpp $(DEPS)
 	$(CC) -c -o $@ $< $(CFLAGS)

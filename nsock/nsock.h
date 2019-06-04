@@ -2,6 +2,8 @@
 #define _NSOCK_H
 
 #include <string>
+#include <iostream>
+#include <sstream>
 #include <memory>
 #include <functional>
 #include <algorithm>
@@ -37,6 +39,8 @@ typedef std::function<void (NSockPtr sock)> NSockOnConnectFunc;
 
 struct SockStat {
     uint64_t acceptNr = 0;
+    uint64_t recvBytes = 0;
+    uint64_t sendBytes = 0;
 
     // errors
     uint64_t sysErrorNr = 0;
@@ -45,6 +49,24 @@ struct SockStat {
 
     uint64_t recvErrorNr = 0;
     uint64_t sendErrorNr = 0;
+
+    std::string toString() const {
+        std::stringstream ss;
+
+        ss << "{"
+           << "acceptNr:" << acceptNr << ", "
+           << "recvBytes:" << recvBytes << ", "
+           << "sendBytes:" << sendBytes << ", "
+
+           << "sysErrorNr:" << sysErrorNr << ", "
+           << "listenErrorNr:" << listenErrorNr << ", "
+           << "acceptErrorNr:" << acceptErrorNr << ", "
+           << "recvErrorNr:" << recvErrorNr << ", "
+           << "sendErrorNr:" << sendErrorNr
+           << "}";
+
+        return ss.str();
+    }
 };
 
 /*
@@ -79,7 +101,7 @@ struct CircularBuffer {
             wlen -= len;
         }
 
-        return wlen;
+        return offset;
     }
 
     size_t get(uint8_t const **bufPtr) {
@@ -97,7 +119,7 @@ struct CircularBuffer {
         return rlen;
     }
 
-    uint8_t dataBuf[8192];
+    uint8_t dataBuf[16*1024];
     const size_t dataBufSize = sizeof(dataBuf);
     size_t dataStart = 0;
     size_t dataLen = 0;
@@ -197,7 +219,7 @@ private:
     NSockOnDrainFunc onDrain;
 
     // Recv buffer
-    uint8_t recvBuf[8192];
+    uint8_t recvBuf[16*1024];
 
     // Send buffer
     CircularBuffer sendBuf;

@@ -7,7 +7,7 @@
 #include <inttypes.h>
 #include <sys/epoll.h>
 
-namespace nsock {
+namespace npoll {
 
 typedef std::function<void (int fd, uint32_t revents)> PollFunc;
 

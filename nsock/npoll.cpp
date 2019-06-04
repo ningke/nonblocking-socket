@@ -10,7 +10,7 @@
 
 using namespace std;
 
-namespace nsock {
+namespace npoll {
 
 
 class NPollStruct {
@@ -50,7 +50,7 @@ void npollLoop(bool &exitLoop) {
         sNPollObj.waitForEvents(timerResMs);
     }
 
-    log("%s: exiting...\n", __FUNCTION__);
+    nsock::log("%s: exiting...\n", __FUNCTION__);
 }
 
 
@@ -69,9 +69,8 @@ NPollStruct::NPollStruct() {
 
 NPollStruct::~NPollStruct() {
     if (!fdMap.empty()) {
-        log("%s: when exiting, fdMap still has %d fds!\n", __FUNCTION__,
+        nsock::log("%s: when exiting, fdMap still has %d fds!\n", __FUNCTION__,
             fdMap.size());
-        assert(0);
     }
 
     if (epollfd != -1) {
@@ -98,7 +97,7 @@ int NPollStruct::waitForEvents(int timeoutMs) {
 
     int nfds = epoll_wait(epollfd, epollEvents, eventsNr, timeoutMs);
     if (nfds == -1) {
-        log("%s: failed epoll_wait: %d\n", __FUNCTION__, errno);
+        nsock::log("%s: failed epoll_wait: %d\n", __FUNCTION__, errno);
         return -1;
     }
 
@@ -107,7 +106,7 @@ int NPollStruct::waitForEvents(int timeoutMs) {
         auto evtFd = epollEvents[n].data.fd;
         auto it = fdMap.find(evtFd);
         if (it == fdMap.end()) {
-            log("%s: epoll_wait returned unknown fd=%d!\n", __FUNCTION__, evtFd);
+            nsock::log("%s: epoll_wait returned unknown fd=%d!\n", __FUNCTION__, evtFd);
         }
 
         auto evtCb = it->second;
@@ -125,7 +124,7 @@ int NPollStruct::addFd(int fd, uint32_t events, PollFunc callback) {
 
     if (it != fdMap.end()) {
         // Already exists
-        log("%s: fd %d is already being monitored\n", __FUNCTION__, fd);
+        nsock::log("%s: fd %d is already being monitored\n", __FUNCTION__, fd);
         return 0;
     }
 
@@ -136,7 +135,7 @@ int NPollStruct::addFd(int fd, uint32_t events, PollFunc callback) {
     ev.data.fd = fd;
     int err = epoll_ctl(epollfd, EPOLL_CTL_ADD, fd, &ev);
     if (err) {
-        log("%s: failed epoll_ctl for fd %d: error=%d\n", __FUNCTION__, fd, errno);
+        nsock::log("%s: failed epoll_ctl for fd %d: error=%d\n", __FUNCTION__, fd, errno);
         fdMap.erase(fd);
         return -1;
     }
@@ -149,13 +148,13 @@ int NPollStruct::removeFd(int fd) {
     auto it = fdMap.find(fd);
 
     if (it == fdMap.end()) {
-        log("%s: fd %d is not being monitored\n", __FUNCTION__, fd);
+        nsock::log("%s: fd %d is not being monitored\n", __FUNCTION__, fd);
         return 0;
     }
 
     int err = epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, NULL);
     if (err) {
-        log("%s: failed epoll_ctl for fd %d: error=%d\n", __FUNCTION__, fd, errno);
+        nsock::log("%s: failed epoll_ctl for fd %d: error=%d\n", __FUNCTION__, fd, errno);
         return -1;
     }
 

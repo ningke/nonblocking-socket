@@ -14,6 +14,7 @@
 
 
 using namespace std;
+using namespace npoll;
 
 namespace nsock {
 
@@ -51,7 +52,7 @@ NSockPtr NSock::listen(const string &host, unsigned short port,
                           &result);
     if (err) {
         stringstream ss;
-        ss << "Failed getaddrinfo(): " << gai_strerror(err);
+        ss << "Failed getaddrinfo(): " << gai_strerror(err) << endl;
         throw runtime_error(ss.str());
     }
 
@@ -72,7 +73,7 @@ NSockPtr NSock::listen(const string &host, unsigned short port,
 
     if (rp == NULL) {
         stringstream ss;
-        ss << "Failed bind(): " << gai_strerror(err);
+        ss << "Failed bind(): " << errno << endl;
         throw runtime_error(ss.str());
     }
 
@@ -82,7 +83,7 @@ NSockPtr NSock::listen(const string &host, unsigned short port,
     socklen_t slen = sizeof (localAddr);
     err = getsockname(sfd, reinterpret_cast<struct sockaddr *>(&localAddr), &slen);
     if (err) {
-        log("Failed getsockname(): %d", __FUNCTION__, errno);
+        log("Failed getsockname(): %d\n", __FUNCTION__, errno);
         ::close(sfd);
         return nullptr;
     }
@@ -90,14 +91,14 @@ NSockPtr NSock::listen(const string &host, unsigned short port,
     // Do listen
     err = ::listen(sfd, 512);
     if (err) {
-        log("Failed listen(): %d", __FUNCTION__, errno);
+        log("Failed listen(): %d\n", __FUNCTION__, errno);
         ::close(sfd);
         return nullptr;
     }
 
     err = setnonblocking(sfd);
     if (err) {
-        log("Failed setnonblocking(): %d", __FUNCTION__, errno);
+        log("Failed setnonblocking(): %d\n", __FUNCTION__, errno);
         ::close(sfd);
         return nullptr;
     }
@@ -146,7 +147,7 @@ NSockPtr NSock::connect(std::string const &host, unsigned short port,
                           &result);
     if (err) {
         stringstream ss;
-        ss << "Failed getaddrinfo(): " << gai_strerror(err);
+        ss << "Failed getaddrinfo(): " << gai_strerror(err) << endl;
         throw runtime_error(ss.str());
     }
 
@@ -160,7 +161,7 @@ NSockPtr NSock::connect(std::string const &host, unsigned short port,
         // Do connect
         err = ::connect(sfd, rp->ai_addr, rp->ai_addrlen);
         if (err) {
-            log("Failed connect(): %d", __FUNCTION__, errno);
+            log("Failed connect(): %d\n", __FUNCTION__, errno);
             ::close(sfd);
             sfd = -1;
         } else {
@@ -169,7 +170,7 @@ NSockPtr NSock::connect(std::string const &host, unsigned short port,
     }
 
     if (sfd == -1) {
-        log("%s: Failed socket()|connect(): %s", __FUNCTION__, gai_strerror(err));
+        log("%s: Failed socket()|connect(): %s\n", __FUNCTION__, strerror(errno));
         return nullptr;
     }
 
@@ -179,7 +180,7 @@ NSockPtr NSock::connect(std::string const &host, unsigned short port,
     socklen_t slen = sizeof (localAddr);
     err = getsockname(sfd, reinterpret_cast<struct sockaddr *>(&localAddr), &slen);
     if (err) {
-        log("Failed getsockname(): %d", __FUNCTION__, errno);
+        log("Failed getsockname(): %d\n", __FUNCTION__, errno);
         ::close(sfd);
         return nullptr;
     }
@@ -187,7 +188,7 @@ NSockPtr NSock::connect(std::string const &host, unsigned short port,
     // Set to non-blocking
     err = setnonblocking(sfd);
     if (err) {
-        log("Failed setnonblocking(): %d", __FUNCTION__, errno);
+        log("Failed setnonblocking(): %d\n", __FUNCTION__, errno);
         ::close(sfd);
         return nullptr;
     }
@@ -321,6 +322,8 @@ void NSock::recvFromSocket() {
             return;
         }
 
+        stat.recvBytes += recvdLen;
+
         onRecv(shared_from_this(), recvBuf, recvdLen);
     }
 }
@@ -351,9 +354,11 @@ void NSock::writeToSocket() {
                 return;
             }
         } else if (sentLen == 0) {
-            log("%S: sent %d bytes\n", __FUNCTION__, sentLen);
+            log("%s: sent %d bytes\n", __FUNCTION__, sentLen);
             return;
         }
+
+        stat.sendBytes += sentLen;
     }
 
     if (drained && onDrain) {

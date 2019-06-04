@@ -5,9 +5,12 @@
 #include "npoll.h"
 #include "util.h"
 #include "echoServer.h"
+#include "commandServer.h"
+
 
 using namespace std;
 using namespace nsock;
+using namespace npoll;
 
 
 ConnServerPtr ConnServer::createConnServer(std::string host, unsigned short port) {
@@ -27,10 +30,48 @@ ConnServer::ConnServer(std::string host, unsigned short port) :
     mHost(host), mPort(port) {
 }
 
-void ConnServer::serverLoop() {
-    bool exitPollLoop = false;
-    npollLoop(exitPollLoop);
+string ConnServer::getConnStats() const {
+    stringstream ss;
 
+    auto stat = mListenSock->getStats();
+    ss << "{\n";
+    ss << "listenSocket: " << stat.toString() << ",\n";
+    ss << "connections: [";
+    bool first = true;
+    for (auto &conn : mConnections) {
+        auto connStat = conn->getStats();
+        if (!first) {
+            ss << ",\n";
+        } else {
+            first = false;
+        }
+        ss << connStat.toString();
+    }
+    ss << "]\n";
+    ss << "}\n";
+
+    return ss.str();
+}
+
+void ConnServer::serverLoop() {
+    bool exit = false;
+
+    EofFunc eofCb = [&]() {
+        log("%s: Got EoF, exiting...\n", __FUNCTION__);
+        exit = true;
+    };
+
+    CommandServer cmdServer(eofCb);
+    auto self = shared_from_this();
+    auto getStatsCb = [=] (const NRequest &req) {
+        return self->getConnStats();
+    };
+
+    cmdServer.addCommand("get-stats", getStatsCb);
+
+    cmdServer.monitorStdin();
+
+    npollLoop(exit);
     mConnections.clear();
 
     if (mListenSock) {
@@ -83,6 +124,10 @@ void ConnServer::onConnect(NSockPtr sock) {
 
 int main(int argc, char *argv[]) {
     // TODO getopt
+
+    logSetPath("/tmp/nsock/echoServer");
+
+    log("%s: starting...\n", argv[0]);
 
     ConnServerPtr server = ConnServer::createConnServer();
 

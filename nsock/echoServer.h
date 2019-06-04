@@ -21,6 +21,7 @@ public:
     static ConnServerPtr createConnServer(std::string host="localhost",
                                           unsigned short port=12121);
     void serverLoop();
+    std::string getConnStats() const;
 
 private:
 
