@@ -336,7 +336,7 @@ void NSock::writeToSocket() {
     // EAGAIN. Otherwise, epoll_wait will not notify us about availabe writes.
     bool drained = false;
     while (true) {
-        const uint8_t *buf;
+        uint8_t *buf;
         size_t bufLen;
 
         bufLen = sendBuf.get(&buf);

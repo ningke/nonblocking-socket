@@ -104,7 +104,7 @@ struct CircularBuffer {
         return offset;
     }
 
-    size_t get(uint8_t const **bufPtr) {
+    size_t get(uint8_t **bufPtr) {
         const size_t dataBufSize = sizeof(dataBuf);
 
         if (dataLen == 0) {
@@ -117,6 +117,11 @@ struct CircularBuffer {
         dataStart = (dataStart + rlen) % dataBufSize;
         dataLen -= rlen;
         return rlen;
+    }
+
+    size_t getFreeSpace() const {
+        assert(dataLen < dataBufSize);
+        return (dataBufSize - dataLen);
     }
 
     uint8_t dataBuf[16*1024];
