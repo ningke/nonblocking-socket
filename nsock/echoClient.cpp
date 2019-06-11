@@ -1,5 +1,6 @@
 #include <iostream>
 #include <algorithm>
+#include <queue>
 
 #include "nsock.h"
 #include "npoll.h"
@@ -10,13 +11,15 @@ using namespace std;
 using namespace nsock;
 
 
-void onClientSocketRecv(NSockPtr sock, const uint8_t *buf, int recvLen) {
+size_t onClientSocketRecv(NSockPtr sock, const uint8_t *buf, int recvLen) {
     log("%s: nsock recv: nsockId=%lu, buf=%p, recvLen=%d\n", __FUNCTION__,
         sock->getId(), buf, recvLen);
 
     /* Write whatever we receive to stdout. To avoid messing up the
        terminal, only write ascii */
     write(STDOUT_FILENO, buf, recvLen);
+
+    return recvLen;
 }
 
 void onClientSocketDrain(NSockPtr sock) {
@@ -30,10 +33,22 @@ void onClientSocketError(NSockPtr sock, int error) {
 }
 
 /* Send whatever we get from stdin to the echo server */
-void onStdin(NSockPtr sock, const string &inp) {
-    size_t n = sock->send((uint8_t *)inp.c_str(), inp.size());
-    if (n < inp.size()) {
-        log("%s: socket write buffer full. Message truncated.\n", __FUNCTION__);
+void onStdin(NSockPtr sock, queue<string> &inpQ) {
+    while (!inpQ.empty()) {
+        auto &inp = inpQ.front();
+
+        int n = sock->send((uint8_t *)inp.c_str(), inp.size());
+        if (n < 0) {
+            log("%s: Socket write error: %d.\n", __FUNCTION__, n);
+            break;
+        } else if (n == (int)inp.size()) {
+            inpQ.pop();
+        } else if (n < (int)inp.size()) {
+            log("%s: socket write buffer full. Message truncated.\n", __FUNCTION__);
+            // save the rest of the string for later
+            inp.erase(0, n);
+            break;
+        }
     }
 }
 
@@ -54,8 +69,13 @@ void echoLoop(const string &host, unsigned short port) {
         exit = true;
     };
 
+    // if socket write buffer is full, we will need to save the input for later,
+    // when we get the drain event.
+    queue<string> inpQ;
     RawInputFunc rawInpCb = [&] (const string &inp) {
-        onStdin(sock, inp + '\n');
+        // Note string copying here
+        inpQ.push(inp + '\n');
+        onStdin(sock, inpQ);
     };
     CommandServer cmdServer(eofCb, rawInpCb);
     cmdServer.monitorStdin();

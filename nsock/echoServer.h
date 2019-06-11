@@ -18,23 +18,27 @@ typedef std::shared_ptr<ConnServer> ConnServerPtr;
 class ConnServer : public std::enable_shared_from_this<ConnServer> {
 public:
     ConnServer(std::string host, unsigned short port);
+    ~ConnServer();
+
     static ConnServerPtr createConnServer(std::string host="localhost",
                                           unsigned short port=12121);
     void serverLoop();
     std::string getConnStats() const;
 
 private:
-
     /* The socket callbacks */
     void onConnect(nsock::NSockPtr sock);
     void onSocketError(nsock::NSockPtr sock, int error);
     void onSocketDrain(nsock::NSockPtr sock);
-    void onSocketRecv(nsock::NSockPtr sock, const uint8_t *buf, int recvLen);
+    size_t onSocketRecv(nsock::NSockPtr sock, const uint8_t *buf, int recvLen);
 
     std::string mHost;
-    unsigned short mPort = 0;
+    unsigned short mPort;
     nsock::NSockPtr mListenSock;
     std::set<nsock::NSockPtr> mConnections;
+
+    uint8_t *mPendingSendBuf = nullptr;
+    bool mRecvPaused = false;
 };
 
 

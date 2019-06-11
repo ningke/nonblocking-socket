@@ -20,8 +20,9 @@ namespace nsock {
 
 uint64_t NSock::sNSockId = 0;
 
-NSock::NSock(int sfd) :
-    id(getNextNSockId()), sockfd(sfd) {
+NSock::NSock(int sfd, int sndBufSz) :
+    id(getNextNSockId()), sockfd(sfd),
+    sendBuffer(sndBufSz) {
 }
 
 
@@ -210,12 +211,24 @@ NSockPtr NSock::connect(std::string const &host, unsigned short port,
  * less than bufLen, then the socket buffer is full, and the caller should wait
  * a bit before trying again.
  */
-int NSock::send(const uint8_t *buf, int bufLen) {
-    size_t len = sendBuf.put(buf, bufLen);
+int NSock::send(const uint8_t *buf, size_t bufLen) {
+    size_t written = 0;
 
-    writeToSocket();
+    while (written < bufLen) {
+        size_t len = sendBuffer.put(buf + written, bufLen - written);
+        if (len == 0) {
+            log("%s: Socket send buffer full after writing %d bytes\n",
+                __FUNCTION__, written);
+            break;
+        }
 
-    return len;
+        assert(len <= bufLen - written);
+        written += len;
+
+        writeToSocket();
+    }
+
+    return written;
 }
 
 
@@ -277,7 +290,7 @@ void NSock::onAcceptCb(uint32_t revents) {
 
     err = setnonblocking(connfd);
     if (err) {
-        log("Failed setnonblocking(): %d", __FUNCTION__, errno);
+        log("%s: Failed setnonblocking(): %d", __FUNCTION__, errno);
         ::close(connfd);
         return;
     }
@@ -286,27 +299,67 @@ void NSock::onAcceptCb(uint32_t revents) {
     ++stat.acceptNr;
     auto connSock = make_shared<NSock>(connfd);
     connSock->localAddr = localAddr;
+    connSock->remoteAddr = remAddr;
     connSock->monitorSocket();
 
     onConnect(connSock);
 }
 
+/*
+ * Set the recv callback. If recvFn is null, then socket recv is paused. This is
+ * useful for a server that needs to throttle incoming traffic. For example, a
+ * proxy server would want to pause receiving from the inlet when the outlet is
+ * full.
+ */
+void NSock::setRecvFn(NSockOnRecvFunc recvFn) {
+    onRecv = recvFn;
+
+    if (recvFn == nullptr) {
+        log("%s: setting recvFn to null, socket receive is now paused\n",
+            __FUNCTION__);
+        return;
+    }
+
+    recvFromSocket();
+}
 
 /*
  * Recieve data from the socket and invoke onRecv.
  */
 void NSock::recvFromSocket() {
-    if (!onRecv) {
-        return;
-    }
-
     // We must drain the socket receive buffer by reading until we encounter
     // EAGAIN. Otherwise, epoll_wait will not notify us about any remaining data
     // in the socket.
     while (true) {
-        int recvdLen = ::recv(sockfd, recvBuf, sizeof(recvBuf), 0);
+        if (!onRecv) {
+            return;
+        }
 
-        if (recvdLen == -1) {
+        size_t consumed = 0;
+        if (recvLen) {
+            // Invoke onRecv if there's some data in recvBuf.
+            assert(recvOffset + recvLen < sizeof(recvBuf));
+            consumed = onRecv(shared_from_this(), recvBuf + recvOffset, recvLen);
+            consumed = min(consumed, recvLen);
+
+            recvLen -= consumed;
+            recvOffset = (recvOffset + consumed) % sizeof(recvBuf);
+
+            if (recvLen) {
+                // Receiver couldn't consume the entire recvBuf
+                return;
+            }
+
+            // Reset offset to the beginner of recvBuf
+            recvOffset = 0;
+        }
+
+        assert(recvOffset == 0);
+        assert(recvLen == 0);
+
+        int len = ::recv(sockfd, recvBuf, sizeof(recvBuf), 0);
+
+        if (len == -1) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
                 //log("%s: recv not available: %d\n", __FUNCTION__, errno);
                 return;
@@ -316,30 +369,33 @@ void NSock::recvFromSocket() {
             ++stat.recvErrorNr;
             handleError();
             return;
-        } else if (recvdLen == 0) {
+        }
+
+        if (len == 0) {
             log("%s: peer closed socket: %d\n", __FUNCTION__, errno);
             handleError();
             return;
         }
 
-        stat.recvBytes += recvdLen;
+        recvLen = len;
 
-        onRecv(shared_from_this(), recvBuf, recvdLen);
+        stat.recvBytes += recvLen;
     }
 }
 
 /*
  * Write data to the socket.
  */
-void NSock::writeToSocket() {
+bool NSock::writeToSocket() {
+    bool drained = false;
+
     // We must drain the socket send buffer by writing until we encounter
     // EAGAIN. Otherwise, epoll_wait will not notify us about availabe writes.
-    bool drained = false;
     while (true) {
         uint8_t *buf;
         size_t bufLen;
 
-        bufLen = sendBuf.get(&buf);
+        bufLen = sendBuffer.get(&buf);
         if (!buf) {
             drained = true;
             break;
@@ -347,23 +403,21 @@ void NSock::writeToSocket() {
 
         int sentLen = ::send(sockfd, buf, bufLen, 0);
         if (sentLen == -1) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                return;
-            } else {
+            if (!(errno == EAGAIN || errno == EWOULDBLOCK)) {
                 handleError();
-                return;
             }
+            break;
         } else if (sentLen == 0) {
-            log("%s: sent %d bytes\n", __FUNCTION__, sentLen);
-            return;
+            log("%s: sent 0 bytes, remote socket closed\n", __FUNCTION__);
+            handleError();
+            break;
         }
 
+        log("%s: sent %d bytes\n", __FUNCTION__, sentLen);
         stat.sendBytes += sentLen;
     }
 
-    if (drained && onDrain) {
-        onDrain(shared_from_this());
-    }
+    return drained;
 }
 
 
@@ -397,7 +451,10 @@ void NSock::monitorSocket() {
         }
 
         if (EPOLLOUT & revents) {
-            self->writeToSocket();
+            bool drained = self->writeToSocket();
+            if (drained && onDrain) {
+                onDrain(shared_from_this());
+            }
         }
     };
 

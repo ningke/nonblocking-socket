@@ -32,7 +32,7 @@ enum NSockState {
 
 class NSock;
 typedef std::shared_ptr<NSock> NSockPtr;
-typedef std::function<void (NSockPtr sock, const uint8_t *buf, int recvLen)> NSockOnRecvFunc;
+typedef std::function<size_t (NSockPtr sock, const uint8_t *buf, int recvLen)> NSockOnRecvFunc;
 typedef std::function<void (NSockPtr sock)> NSockOnDrainFunc;
 typedef std::function<void (NSockPtr sock, int error)> NSockOnErrorFunc;
 typedef std::function<void (NSockPtr sock)> NSockOnConnectFunc;
@@ -73,7 +73,13 @@ struct SockStat {
  * A circular buffer.
  */
 struct CircularBuffer {
-    CircularBuffer() {
+    CircularBuffer(size_t bufSize=64*1024) :
+        dataBufSize(bufSize) {
+        dataBuf = new uint8_t[bufSize];
+    }
+
+    ~CircularBuffer() {
+        delete [] dataBuf;
     }
 
     bool full() const {
@@ -105,8 +111,6 @@ struct CircularBuffer {
     }
 
     size_t get(uint8_t **bufPtr) {
-        const size_t dataBufSize = sizeof(dataBuf);
-
         if (dataLen == 0) {
             *bufPtr = nullptr;
             return 0;
@@ -124,8 +128,8 @@ struct CircularBuffer {
         return (dataBufSize - dataLen);
     }
 
-    uint8_t dataBuf[16*1024];
-    const size_t dataBufSize = sizeof(dataBuf);
+    uint8_t *dataBuf;
+    const size_t dataBufSize = 0;
     size_t dataStart = 0;
     size_t dataLen = 0;
 };
@@ -164,10 +168,7 @@ public:
     }
 
     /* Set the OnRecv callback */
-    void setRecvFn(NSockOnRecvFunc recvFn) {
-        onRecv = recvFn;
-        recvFromSocket();
-    }
+    void setRecvFn(NSockOnRecvFunc recvFn);
 
     /* Set the OnError callback */
     void setErrorFn(NSockOnErrorFunc errorFn) {
@@ -183,10 +184,10 @@ public:
     void end();
 
     /* Send some data */
-    int send(const uint8_t *buf, int bufLen);
+    int send(const uint8_t *buf, size_t bufLen);
 
     /* Constructor - don't call directly, use listen(), or connect() */
-    NSock(int sfd=-1);
+    NSock(int sfd=-1, int sndBufSz=64*1024);
 
     /* Destructor */
     ~NSock();
@@ -197,7 +198,7 @@ private:
 
     /* Low level socket read|write */
     void recvFromSocket();
-    void writeToSocket();
+    bool writeToSocket();
 
     /* Handle errors */
     void handleError();
@@ -224,10 +225,12 @@ private:
     NSockOnDrainFunc onDrain;
 
     // Recv buffer
-    uint8_t recvBuf[16*1024];
+    uint8_t recvBuf[64*1024];
+    size_t recvOffset = 0;
+    size_t recvLen = 0;
 
     // Send buffer
-    CircularBuffer sendBuf;
+    CircularBuffer sendBuffer;
 
     // Stats
     SockStat stat;

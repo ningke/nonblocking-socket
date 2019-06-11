@@ -13,6 +13,14 @@ using namespace nsock;
 using namespace npoll;
 
 
+ConnServer::ConnServer(std::string host, unsigned short port) :
+    mHost(host), mPort(port) {
+}
+
+ConnServer::~ConnServer() {
+}
+
+
 ConnServerPtr ConnServer::createConnServer(std::string host, unsigned short port) {
     ConnServerPtr server = make_shared<ConnServer>(host, port);
 
@@ -20,14 +28,11 @@ ConnServerPtr ConnServer::createConnServer(std::string host, unsigned short port
         server->onConnect(sock);
     };
     server->mListenSock = NSock::listen(host, port, connCb);
+    printf("ConnServer now listening on %s:%d\n", host.c_str(), port);
 
     server->serverLoop();
 
     return server;
-}
-
-ConnServer::ConnServer(std::string host, unsigned short port) :
-    mHost(host), mPort(port) {
 }
 
 string ConnServer::getConnStats() const {
@@ -81,16 +86,42 @@ void ConnServer::serverLoop() {
 }
 
 
-void ConnServer::onSocketRecv(NSockPtr sock, const uint8_t *buf, int recvLen) {
+size_t ConnServer::onSocketRecv(NSockPtr sock, const uint8_t *buf, int recvLen) {
     log("%s: nsock recv: nsockId=%lu, buf=%p, recvLen=%d\n", __FUNCTION__,
         sock->getId(), buf, recvLen);
 
-    sock->send(buf, recvLen);
+    int n = sock->send(buf, recvLen);
+    if (n < 0) {
+        log("%s: socket send error: %d\n", __FUNCTION__, n);
+        sock->end();
+        return 0;
+    }
+
+    if (n < recvLen) {
+        log("%s: socket send buffer full, pausing receive\n", __FUNCTION__, n);
+        sock->setRecvFn(nullptr);
+
+        assert(!mRecvPaused);
+        mRecvPaused = true;
+    }
+
+    return n;
 }
 
 void ConnServer::onSocketDrain(NSockPtr sock) {
     log("%s: nsock drained: nsockId=%lu\n", __FUNCTION__,
         sock->getId());
+
+    // Rearm receive if needed
+    if (mRecvPaused) {
+        auto self = shared_from_this();
+        NSockOnRecvFunc recvCb = [=] (NSockPtr sock, const uint8_t *buf, int bufLen) {
+            return self->onSocketRecv(sock, buf, bufLen);
+        };
+
+        mRecvPaused = false;
+        sock->setRecvFn(recvCb);
+    }
 }
 
 void ConnServer::onSocketError(NSockPtr sock, int error) {
@@ -105,7 +136,7 @@ void ConnServer::onConnect(NSockPtr sock) {
 
     auto self = shared_from_this();
     NSockOnRecvFunc recvCb = [=] (NSockPtr sock, const uint8_t *buf, int bufLen) {
-        self->onSocketRecv(sock, buf, bufLen);
+        return self->onSocketRecv(sock, buf, bufLen);
     };
     sock->setRecvFn(recvCb);
 

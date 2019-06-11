@@ -1,5 +1,6 @@
 INCLUDE_DIR = ../include
 CC = g++
+#CC = clang++
 CFLAGS = -I$(INCLUDE_DIR) -fsanitize=address -Wall -g -std=c++17
 
 LIBS = -lpthread
