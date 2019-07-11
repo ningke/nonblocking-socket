@@ -1,3 +1,4 @@
-# echoService
+# Non-blocking Socket Library
 
-The echo server echos back whatever the client send to it.
+Non-blocking socket library similar in style to the node.js net.socket module.
+
